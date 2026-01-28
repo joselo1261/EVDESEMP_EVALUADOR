@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Evaluaciones · RRHH</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    .brand{display:flex;align-items:center;gap:12px;text-decoration:none}
+    .brand-logo{height:42px !important;max-height:42px !important;width:auto !important;max-width:320px !important;display:block}
+
+    /* Cuando el header de sección queda sticky, el padding-top global de <main>
+       (18px) se vuelve un “hueco” visible. En esta página lo sacamos. */
+    body[data-page="realizar"] main{ padding-top: 0; }
+
+    /* ===== Evaluaciones: 2 secciones + header sticky (solo esta página) ===== */
+    body[data-page="realizar"] .eval-top-card{
+      position: sticky;
+      /* Pegado al header fijo (sin “aire” arriba) */
+      top: var(--header-h, 0px);
+      z-index: 999; /* debajo del header (1000) */
+      margin-bottom: 10px;
+      padding: 14px 16px 10px;
+      background: var(--card);
+      box-shadow: 0 8px 22px rgba(15,23,42,.10);
+    }
+    body[data-page="realizar"] .eval-top-card .page-head{ margin-bottom: 8px; }
+    body[data-page="realizar"] .eval-top-card .toolbar{ margin: 2px 0 0; }
+    body[data-page="realizar"] .eval-top-card .toolbar{ row-gap: 8px; }
+
+    /* 2da sección: que los cards aprovechen ancho y arranquen sin “aire” extra */
+    body[data-page="realizar"] .eval-body-card{ padding: 12px; }
+    body[data-page="realizar"] .eval-body-card .r-list{ margin-top: 0; }
+
+    /* Evitar que el contenido “toque” la sticky cuando hay cards con sombras */
+    body[data-page="realizar"] .eval-body-card{ margin-top: 0; }
+  </style>
+</head>
+<body data-page="realizar">
+  <header>
+    <div class="container header-row">
+      <!--
+      <a class="brand" href="inicio.html" aria-label="FACORSA">
+        <img class="brand-logo" src="logo-white.png" alt="FACORSA" />
+      </a>
+        -->
+      <nav aria-label="Navegacion">
+        <!--
+        <a class="nav-link" href="inicio.html">Inicio</a>
+        <a class="nav-link" href="evaluaciones.html">Evaluaciones</a>
+        <a class="nav-link" href="listado_evaluaciones.html">Listado Evaluaciones</a>
+        <a class="nav-link" href="compromiso_presentismo.html">Compromiso y Presentismo</a>
+        <a class="nav-link" href="resultados.html">Resultados</a>
+         -->
+        <!--
+        -->
+
+
+      </nav>
+    </div>
+  </header>
+
+  <!-- Fija la altura real del header para el sticky de esta página (sin tocar main.js) -->
+  <script>
+    (function(){
+      const h = document.querySelector('header');
+      if(!h) return;
+      const set = () => document.documentElement.style.setProperty('--header-h', (h.offsetHeight||0) + 'px');
+      set();
+      window.addEventListener('resize', set);
+    })();
+  </script>
+
+  <main class="container">
+    <!-- Sección 1 (sticky): encabezado + filtros -->
+    <section class="card eval-top-card" aria-labelledby="t">
+      <div class="page-head">
+        <div>
+          <h1 class="page-title" id="t">Evaluaciones</h1>
+          <div class="subhead">
+            <span class="pill">Año: <span id="rAnioLabel">2026</span></span>
+            <span class="pill">Estado: <span id="rState">—</span></span>
+            <span class="pill">Evaluados: <span id="rCount">0</span></span>
+          </div>
+        </div>
+
+        <div class="page-actions">
+          <label class="inline">
+            <span>Año</span>
+            <input id="rAnio" class="anio" type="number" min="2000" max="2100" value="2026" />
+          </label>
+          <button id="rReload" class="btn">Recargar</button>
+        </div>
+      </div>
+
+      <div class="toolbar toolbar-compact" aria-label="Filtro evaluador">
+        <div class="filter filter-wide">
+          <label for="rEvaluador">Evaluador:</label>
+          <select id="rEvaluador" class="select no-caret">
+            <option value="">Seleccionar...</option>
+          </select>
+        </div>
+
+        <div class="filter">
+          <label for="rFiltroEstado">Estado</label>
+          <select id="rFiltroEstado" class="select no-caret">
+            <option value="">Todos</option>
+            <option value="COMPLETA">Completa</option>
+            <option value="PENDIENTE">Pendiente</option>
+          </select>
+        </div>
+
+        <div class="filter" style="margin-left:auto;">
+          <label class="inline">
+            <span>Buscar</span>
+            <input id="rSearch" class="search" type="search" placeholder="Buscar…" autocomplete="off" />
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <!-- Sección 2: listado -->
+    <section class="card eval-body-card" aria-label="Listado de evaluados">
+      <div class="r-list" id="rList"></div>
+      <!-- Control interno para auto-open cuando viene de listado_asignaciones -->
+      <input type="hidden" id="rAutoOpen" value="0" />
+    </section>
+
+    <footer class="container">
+      <div>Proyecto Evaluaciones</div>
+    </footer>
+  </main>
+
+  <!-- Modal -->
+  <div class="modal-backdrop" id="rBackdrop" aria-hidden="true">
+    <div class="modal" id="rModal" role="dialog" aria-modal="true" aria-labelledby="rModalTitle">
+      <div class="modal-head">
+        <div>
+          <div class="modal-title" id="rModalTitle">Evaluación</div>
+          <div class="modal-sub" id="rModalSub"></div>
+        </div>
+        <button class="btn btn-sm" id="rClose" type="button">Cerrar</button>
+      </div>
+
+      <div class="modal-msg" id="rModalMsg"></div>
+      <div class="modal-body" id="rModalBody"></div>
+
+      <div class="modal-foot">
+        <button class="btn" id="rSave" type="button">Guardar evaluación</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="main.js"></script>
+
+  <script>
+  (function () {
+    const input = document.getElementById('rSearch');
+    const list = document.getElementById('rList');
+    if (!input || !list) return;
+
+    const normalize = (s) => (s || '')
+      .toString()
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+    const apply = () => {
+      const q = normalize(input.value.trim());
+      const children = Array.from(list.children);
+      for (const el of children) {
+        const hay = normalize(el.textContent || '');
+        el.style.display = (!q || hay.includes(q)) ? '' : 'none';
+      }
+    };
+
+    input.addEventListener('input', apply);
+
+    // Reaplica el filtro si main.js vuelve a renderizar el listado
+    const obs = new MutationObserver(() => apply());
+    obs.observe(list, { childList: true });
+
+    // Por si ya hay contenido al cargar
+    apply();
+  })();
+  </script>
+
+</body>
+</html>

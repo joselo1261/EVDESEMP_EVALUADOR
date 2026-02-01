@@ -1,0 +1,57 @@
+/* styles-local-mobile.css
+   Ajustes SOLO locales para mobile, sin tocar styles.css del proyecto grande.
+   Scopiado a body[data-page="realizar"] para evitar efectos colaterales.
+*/
+
+@media (max-width: 640px){
+
+  /* Toolbar: que no desborde y pueda bajar a 2 líneas */
+  body[data-page="realizar"] .toolbar{
+    flex-wrap: wrap;
+    overflow-x: hidden;
+    gap: 10px;
+  }
+
+  /* Cada "filter" ocupa el ancho disponible */
+  body[data-page="realizar"] .toolbar .filter{
+    flex: 1 1 100%;
+    min-width: 0;
+    width: 100%;
+  }
+
+  /* El select grande (Evaluador) NO fuerza 320px */
+  body[data-page="realizar"] .toolbar .filter-wide{
+    max-width: 100%;
+    width: 100%;
+  }
+  body[data-page="realizar"] .toolbar .filter-wide .select{
+    min-width: 0;   /* override del min-width:320px */
+    width: 100%;
+  }
+
+  /* Buscador: como en el HTML tiene margin-left:auto inline,
+     lo neutralizamos en mobile para que no empuje raro */
+  body[data-page="realizar"] #globalSearch{
+    margin-left: 0 !important;
+  }
+
+  /* Botones: que ocupen todo el ancho */
+  body[data-page="realizar"] .toolbar .btn{
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Header y contenedor: un poco más compacto en mobile */
+  body[data-page="realizar"] .main-header{
+    padding: 12px 12px 10px;
+  }
+  body[data-page="realizar"] .container{
+    padding: 12px;
+  }
+
+  /* Cards/listado: 1 columna y padding más ajustado */
+  body[data-page="realizar"] .r-list{
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+}

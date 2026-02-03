@@ -23,7 +23,7 @@
       margin-bottom: 10px;
       padding: 14px 16px 10px;
       background: var(--card);
-      box-shadow: 0 8px 22px rgba(15,23,42,.10);
+      box-shadow: none;
     }
     body[data-page="realizar"] .eval-top-card .page-head{ margin-bottom: 8px; }
     body[data-page="realizar"] .eval-top-card .toolbar{ margin: 2px 0 0; }
@@ -35,6 +35,66 @@
 
     /* Evitar que el contenido “toque” la sticky cuando hay cards con sombras */
     body[data-page="realizar"] .eval-body-card{ margin-top: 0; }
+  
+    /* === Borde degradé + sombra viva (sin romper sticky) === */
+
+    /* Mantener sticky original (top/z-index ya definidos arriba). */
+    body[data-page="realizar"] .eval-top-card{
+      overflow: visible;     /* no romper sticky */
+      border-radius: 18px;
+      padding: 0;            /* el padding pasa al inner para que el borde abrace todo */
+      background: transparent;
+    }
+
+    /* El “marco” real */
+    body[data-page="realizar"] .eval-top-card__inner{
+      border-radius: 18px;
+      position: relative;
+
+      /* borde degradé */
+      border: 2px solid transparent;
+      background:
+        linear-gradient(var(--card, #ffffff), var(--card, #ffffff)) padding-box,
+        linear-gradient(90deg, #ff3cac, #784ba0, #2b86c5) border-box;
+
+      /* mismo padding que tenías en el header */
+      padding: 14px 16px 10px;
+
+      /* sombra suave base */
+      box-shadow: 0 10px 26px rgba(15,23,42,.10);
+    }
+
+    /* Sombra viva: suave y animada detrás (no interfiere con sticky) */
+    body[data-page="realizar"] .eval-top-card::after{
+      content:"";
+      position:absolute;
+      inset:-26px;
+      border-radius: 28px;
+      pointer-events:none;
+      z-index: -1;
+
+      background: radial-gradient(closest-side,
+        rgba(255,60,172,.16),
+        rgba(43,134,197,.10),
+        rgba(0,0,0,0)
+      );
+      filter: blur(18px);
+      opacity: .85;
+      animation: evalTopGlow 8s ease-in-out infinite;
+    }
+
+    @keyframes evalTopGlow{
+      0%   { transform: translate3d(-10px, 6px, 0) scale(1.02); opacity: .65; }
+      50%  { transform: translate3d( 10px,-6px, 0) scale(1.06); opacity: .90; }
+      100% { transform: translate3d(-10px, 6px, 0) scale(1.02); opacity: .65; }
+    }
+50%  { transform: translate3d( 10px,-6px, 0) scale(1.06); opacity: .90; }
+      100% { transform: translate3d(-10px, 6px, 0) scale(1.02); opacity: .65; }
+    }
+50%  { transform: translate3d( 8px,-4px, 0) scale(1.06); opacity: .90; }
+      100% { transform: translate3d(-6px, 3px, 0) scale(1.02); opacity: .70; }
+    }
+
   </style>
 </head>
 <body data-page="realizar">
@@ -75,7 +135,8 @@
   <main class="container">
     <!-- Sección 1 (sticky): encabezado + filtros -->
     <section class="card eval-top-card" aria-labelledby="t">
-      <div class="page-head">
+      <div class="eval-top-card__inner">
+<div class="page-head">
         <div>
           <h1 class="page-title" id="t">Evaluaciones</h1>
           <div class="subhead">
@@ -118,6 +179,7 @@
           </label>
         </div>
       </div>
+</div>
     </section>
 
     <!-- Sección 2: listado -->

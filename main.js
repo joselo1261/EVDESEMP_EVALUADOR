@@ -12,6 +12,11 @@ const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const T_LEGAJOS = 'rrhh_legajos_stage';
 const T_ASIG = 'rrhh_eval_asignaciones';
 
+// Aviso Evaluadores
+const T_AE_CFG = 'rrhh_eval_aviso_config';
+const T_AE_EMAILS = 'rrhh_eval_emails';
+const T_PIN = 'rrhh_eval_pin';
+
 const T_EVAL_CAB = 'rrhh_eval_cab';
 const T_EVAL_ITEMS = 'rrhh_eval_items';
 const T_EVAL_RESP = 'rrhh_eval_respuestas';
@@ -1892,6 +1897,7 @@ async function initRealizar(){
   await rLoadEvaluados(supa);
   rSetState('OK');
 }
+
 
 // =========================
 // LISTADO EVALUACIONES
@@ -7242,6 +7248,376 @@ async function initDashboard(){
 }
 
 
+
+
+// =========================
+// AVISO EVALUADORES - Config Link/Texto (Supabase)
+// - Guarda por Año (campo #lAnio)
+// - Guardado automático con debounce
+// =========================
+async function initAvisoEvaluadoresConfig(){
+  const isAviso = (String(getPage() || '').toLowerCase() === 'aviso_evaluadores') || (getFile() === 'aviso_evaluadores.html');
+  if (!isAviso) return;
+
+  const supa = createClient();
+
+  const anioEl = document.getElementById('lAnio');
+  const linkEl = document.getElementById('aeLink');
+  const textoEl = document.getElementById('aeTexto');
+  const stateEl = document.getElementById('aeCfgState');
+
+  if (!anioEl || !linkEl || !textoEl) return;
+
+  const setState = (t) => { if (stateEl) stateEl.textContent = String(t || ''); };
+
+  const getAnio = () => {
+    const n = Number(anioEl.value || 0);
+    return Number.isFinite(n) && n > 1900 ? n : 2026;
+  };
+
+  const loadCfg = async () => {
+    const anio = getAnio();
+    setState('Cargando...');
+    const { data, error } = await supa
+      .from(T_AE_CFG)
+      .select('anio, link_url, texto')
+      .eq('anio', anio)
+      .maybeSingle();
+    if (error) throw error;
+
+    linkEl.value = data?.link_url || '';
+    textoEl.value = data?.texto || '';
+    setState(''); // limpio
+  };
+
+  const saveCfg = async () => {
+    const anio = getAnio();
+    const payload = {
+      anio,
+      link_url: (linkEl.value || '').trim() || null,
+      texto: (textoEl.value || '').trim() || null,
+    };
+    setState('Guardando...');
+    const { error } = await supa
+      .from(T_AE_CFG)
+      .upsert(payload, { onConflict: 'anio' }).select('anio');
+    if (error) throw error;
+    setState('Guardado');
+    setTimeout(() => setState(''), 900);
+  };
+
+  // debounce
+  let t = null;
+  const queueSave = () => {
+    if (t) clearTimeout(t);
+    t = setTimeout(() => {
+      saveCfg().catch(err => {
+        console.error(err);
+        setState('Error: ' + fmtErr(err));
+      });
+    }, 750);
+  };
+
+  anioEl.addEventListener('change', () => loadCfg().catch(err => { console.error(err); setState('Error: ' + fmtErr(err)); }));
+  linkEl.addEventListener('input', queueSave);
+  textoEl.addEventListener('input', queueSave);
+
+  await loadCfg();
+}
+
+// =========================
+// AVISO EVALUADORES - Emails (Supabase)
+// =========================
+async function initAvisoEvaluadores(){
+  const isAviso = (String(getPage() || '').toLowerCase() === 'aviso_evaluadores') || (getFile() === 'aviso_evaluadores.html');
+  if (!isAviso) return;
+
+  const supa = createClient();
+
+  const anioEl = document.getElementById('lAnio');
+  const anioLbl = document.getElementById('lAnioLabel');
+  const btnReload = document.getElementById('lReload');
+  const selGer = document.getElementById('lGerencia');
+  const selSuc = document.getElementById('lSucursal');
+  const tbody = document.getElementById('aeTbody');
+
+  const setState = (t) => setText('lState', t || '—');
+  const setCounts = (total, vis) => { setText('lCountTotal', total); setText('lCountVis', vis); };
+
+  if (!anioEl || !tbody) return;
+
+  const validEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email||'').trim());
+
+  const getAnio = () => {
+    const n = Number(anioEl.value || 0);
+    return Number.isFinite(n) && n > 1900 ? n : 2026;
+  };
+
+  let rowsAll = []; // { evaluador_id, apellido_nombre, gerencia, sucursal, legajo_nro, email }
+
+  const currentCfg = () => ({
+    link: (document.getElementById('aeLink')?.value || '').trim(),
+    texto: (document.getElementById('aeTexto')?.value || '').trim(),
+  });
+
+  const firstNameFrom = (full) => {
+    const s = String(full || '').trim();
+    if (!s) return '';
+    // Formatos comunes: "Apellido, Nombre ..." o "Nombre Apellido ..."
+    if (s.includes(',')){
+      const after = s.split(',').slice(1).join(',').trim();
+      return (after.split(/\s+/)[0] || '').trim();
+    }
+    return (s.split(/\s+/)[0] || '').trim();
+  };
+
+  const buildMailto = (to, meta) => {
+    const cfg = currentCfg();
+    const anio = getAnio();
+    const nombre = meta?.nombre || '';
+    const legajo = String(meta?.legajo || '').trim().toUpperCase();
+
+    const lines = [];
+
+    const fn = firstNameFrom(nombre);
+    if (fn) lines.push(`Hola ${fn}`, ''); // saludo + línea en blanco
+
+    if (cfg.texto) lines.push(cfg.texto.trim());
+
+    // Link en línea separada para que Outlook lo detecte como URL
+    if (cfg.link) lines.push('', cfg.link.trim());
+
+    // Clave debajo del link
+    if (legajo) lines.push(`Clave Acceso => ${legajo}`);
+
+    const body = encodeURIComponent(lines.join('\r\n'));
+    const subject = encodeURIComponent(`Evaluaciones de Desempeño ${anio}`);
+    return `mailto:${encodeURIComponent(to)}?subject=${subject}&body=${body}`;
+  };
+
+  const upsertRowAE = async (row, patch) => {
+    const legajo_nro = String(row.legajo_nro || '').trim();
+    if (!legajo_nro) return;
+
+    const payload = {
+      legajo_nro,
+      evaluador_apellido_nombre: row.apellido_nombre || '',
+      email: (row.email || '').trim() || null,
+      enviado: (row.enviado === true) ? true : null,
+      ...(patch || {})
+    };
+
+    const { error } = await supa
+      .from(T_AE_EMAILS)
+      .upsert(payload, { onConflict: 'legajo_nro' });
+    if (error) throw error;
+  };
+
+  const upsertEmail = async (row, newEmail) => {
+    row.email = (newEmail || '').trim() || '';
+    await upsertRowAE(row, { email: row.email ? row.email : null });
+  };
+
+  const upsertEnviado = async (row, marcado) => {
+    row.enviado = (marcado === true) ? true : null;
+    await upsertRowAE(row, { enviado: row.enviado });
+  };
+
+  const debounceMap = new Map();
+
+  const render = () => {
+    const g = (selGer?.value || '').trim();
+    const s = (selSuc?.value || '').trim();
+
+    const filtered = rowsAll.filter(r => (!g || r.gerencia === g) && (!s || r.sucursal === s));
+    setCounts(rowsAll.length, filtered.length);
+
+    tbody.innerHTML = filtered.map((r, idx) => {
+      const hasEmail = validEmail(r.email);
+      const disabled = hasEmail ? '' : 'disabled';
+      const sendStateClass = hasEmail ? 'has-email' : 'no-email';
+      const key = escapeHtml(r.legajo_nro || `row_${idx}`);
+      return `
+        <tr data-key="${key}">
+          <td>${escapeHtml(r.apellido_nombre)}</td>
+          <td>
+            <input class="ae-email-input" type="text" inputmode="email" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" readonly placeholder="mail@empresa.com" value="${escapeHtml(r.email || '')}" data-legajo="${escapeHtml(r.legajo_nro || '')}" name="email_${escapeHtml(r.legajo_nro || `row_${idx}`)}" id="email_${escapeHtml(r.legajo_nro || `row_${idx}`)}" />
+          </td>
+          <td class="col-icon">
+            <button class="btn-icon ae-send ${sendStateClass}" type="button" title="Enviar email" ${disabled} data-to="${escapeHtml(r.email || '')}" data-nombre="${escapeHtml(r.apellido_nombre || '')}" data-legajo="${escapeHtml(r.legajo_nro || '')}">
+              <i class="bi bi-envelope-fill"></i>
+            </button>
+          </td>
+          <td class="col-check">
+            <input class="ae-sent" type="checkbox" aria-label="Marcado como enviado" data-legajo="${escapeHtml(r.legajo_nro || '')}" ${r.enviado ? 'checked' : ''} />
+          </td>
+</tr>
+      `;
+    }).join('');
+
+    tbody.querySelectorAll('input.ae-email-input').forEach(inp => {
+// Anti-autofill: Chrome suele completar varios inputs de email.
+// Truco: readonly + type=text + autocomplete=new-password y habilitar edición solo al focus.
+inp.addEventListener('focus', () => { try { inp.removeAttribute('readonly'); } catch(_){} });
+const _kick = () => inp.dispatchEvent(new Event('input', { bubbles: true }));
+inp.addEventListener('change', _kick);
+inp.addEventListener('blur', _kick);
+      inp.addEventListener('input', (ev) => {
+        const el = ev.currentTarget;
+        const tr = el.closest('tr');
+        const key = tr?.getAttribute('data-key') || '';
+        const newVal = String(el.value || '').trim();
+        const ln = String(el.getAttribute('data-legajo')||'').trim();
+
+        const sendBtn = tr?.querySelector('.ae-send');
+        const statusTd = tr?.querySelector('.ae-status');
+        const ok = validEmail(newVal);
+        if (sendBtn){
+          sendBtn.disabled = !ok;
+          sendBtn.setAttribute('data-to', newVal);
+        }
+        if (statusTd) statusTd.textContent = ok ? 'OK' : 'Sin email';
+
+        const allIdx = rowsAll.findIndex(x => String(x.legajo_nro||'').trim() === ln);
+        if (allIdx >= 0) rowsAll[allIdx].email = newVal;
+
+        if (debounceMap.has(key)) clearTimeout(debounceMap.get(key));
+        const t = setTimeout(async () => {
+          try{
+            const row = rowsAll.find(x => String(x.legajo_nro||'').trim() === ln);
+            if (!row) return;
+            await upsertEmail(row, newVal);
+          }catch(err){
+            console.error(err);
+            setState('Error');
+          }
+        }, 600);
+        debounceMap.set(key, t);
+      });
+    });
+
+    tbody.querySelectorAll('button.ae-send').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        const to = String(ev.currentTarget.getAttribute('data-to') || '').trim();
+        if (!validEmail(to)) return;
+        const nombre = String(ev.currentTarget.getAttribute('data-nombre') || '').trim();
+        const legajo = String(ev.currentTarget.getAttribute('data-legajo') || '').trim();
+        window.location.href = buildMailto(to, { nombre, legajo });
+      });
+
+
+    tbody.querySelectorAll('input.ae-sent').forEach(chk => {
+      chk.addEventListener('change', async (ev) => {
+        const el = ev.currentTarget;
+        const tr = el.closest('tr');
+        const ln = String(el.getAttribute('data-legajo') || '').trim();
+        const marcado = !!el.checked;
+
+        const row = rowsAll.find(x => String(x.legajo_nro||'').trim() === ln);
+        if (!row) return;
+
+        try{
+          // Optimista en UI
+          row.enviado = marcado ? true : null;
+          await upsertEnviado(row, marcado);
+        }catch(err){
+          console.error(err);
+          // Revertir checkbox si falló
+          el.checked = (row.enviado === true);
+          setState('Error');
+        }
+      });
+    });
+    });
+  };
+
+  const loadData = async () => {
+    setState('Cargando...');
+    tbody.innerHTML = '';
+    setCounts(0,0);
+
+    const anio = getAnio();
+    if (anioLbl) anioLbl.textContent = String(anio);
+
+    const { data: asig, error: eAsig } = await supa
+      .from(T_ASIG)
+      .select('evaluador_id')
+      .eq('anio', anio);
+    if (eAsig) throw eAsig;
+
+    const evalIds = Array.from(new Set((asig||[]).map(r => r.evaluador_id).filter(Boolean)));
+    if (!evalIds.length){
+      rowsAll = [];
+      fillSelect(selGer, [], { includeAllLabel: 'Todas' });
+      fillSelect(selSuc, [], { includeAllLabel: 'Todas' });
+      render();
+      setState('OK');
+      return;
+    }
+
+    // rrhh_legajos_stage usa columnas con espacios y mayúsculas:
+    // "ID","Nombre Completo","Sucursal","Gerencia","Baja"
+    const { data: legs, error: eLeg } = await supa
+      .from(T_LEGAJOS)
+      .select('"ID","Nombre Completo","Sucursal","Gerencia","Baja"')
+      .in('ID', evalIds);
+    if (eLeg) throw eLeg;
+
+    const legMap = new Map((legs||[]).map(l => [l['ID'], l]));
+
+    const { data: pins, error: ePin } = await supa
+      .from(T_PIN)
+      .select('legajo_id, legajo_nro')
+      .in('legajo_id', evalIds);
+    if (ePin) throw ePin;
+
+    const pinMap = new Map((pins||[]).map(p => [p.legajo_id, String(p.legajo_nro || '').trim()]));
+    const legajoNros = Array.from(new Set((pins||[]).map(p => String(p.legajo_nro||'').trim()).filter(Boolean)));
+
+    let emailMap = new Map();
+    let sentMap = new Map();
+    if (legajoNros.length){
+      const { data: ems, error: eEms } = await supa
+        .from(T_AE_EMAILS)
+        .select('legajo_nro, email, enviado')
+        .in('legajo_nro', legajoNros);
+      if (eEms) throw eEms;
+      emailMap = new Map((ems||[]).map(e => [String(e.legajo_nro||'').trim(), (e.email||'')]));
+      sentMap = new Map((ems||[]).map(e => [String(e.legajo_nro||'').trim(), (e.enviado === true)]));
+    }
+
+    rowsAll = evalIds
+      .map(id => {
+        const l = legMap.get(id) || {};
+        const ln = pinMap.get(id) || '';
+        const email = ln ? (emailMap.get(ln) || '') : '';
+        return {
+          evaluador_id: id,
+          apellido_nombre: (l['Nombre Completo'] || '(Sin nombre)'),
+          gerencia: (l['Gerencia'] || ''),
+          sucursal: (l['Sucursal'] || ''),
+          legajo_nro: ln,
+          email,
+          enviado: (ln ? (sentMap.get(ln) ? true : null) : null)
+        };
+      })
+      .sort((a,b) => String(a.apellido_nombre).localeCompare(String(b.apellido_nombre), 'es'));
+
+    fillSelect(selGer, uniqSorted(rowsAll.map(r => r.gerencia)), { includeAllLabel: 'Todas' });
+    fillSelect(selSuc, uniqSorted(rowsAll.map(r => r.sucursal)), { includeAllLabel: 'Todas' });
+
+    render();
+    setState('OK');
+  };
+
+  btnReload?.addEventListener('click', () => loadData().catch(err => { console.error(err); setState('Error'); }));
+  anioEl.addEventListener('change', () => loadData().catch(err => { console.error(err); setState('Error'); }));
+  selGer?.addEventListener('change', render);
+  selSuc?.addEventListener('change', render);
+
+  await loadData();
+}
+
 // =========================
 // BOOT
 // =========================
@@ -7260,6 +7636,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const isListado = page === 'listado' || page === 'listado_asignaciones' || file === 'listado_asignaciones.html';
     const isEvalRealizar = page === 'realizar' || page === 'evaluaciones' || file === 'evaluaciones.html';
     const isListadoEvaluaciones = page === 'listado_evaluaciones' || file === 'listado_evaluaciones.html';
+    const isAvisoEvaluadores = page === 'aviso_evaluadores' || file === 'aviso_evaluadores.html';
 
     const isFlags = page === 'flags' || file === 'flags.html';
 
@@ -7275,6 +7652,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (isFlags) await initFlags();
     if (isAsignaciones) await initEvaluaciones();
     if (isListado) await initListado();
+    if (isAvisoEvaluadores) {
+      // Config (Link/Texto/Remitente) se inicializa antes para que la UI cargue/guarde
+      // sin depender de la grilla.
+      if (typeof initAvisoEvaluadoresConfig === 'function') await initAvisoEvaluadoresConfig();
+      await initAvisoEvaluadores();
+    }
     if (isListadoEvaluaciones) await initListadoEvaluaciones();
     if (isCP) await initCompromisoPresentismo();
     if (isResultados) await initResultados();
